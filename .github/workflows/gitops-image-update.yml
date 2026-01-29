@@ -1,0 +1,184 @@
+name: GitOps Image Update
+
+on:
+  workflow_call:
+    inputs:
+      project:
+        description: "Project name"
+        required: true
+        type: string
+      component:
+        description: "Component name (e.g., api, web, frontend)"
+        required: true
+        type: string
+      image-tag:
+        description: "Image tag to deploy"
+        required: true
+        type: string
+      deployment-path-pattern:
+        description: "Path pattern to deployment file ({project} and {component} will be replaced)"
+        required: false
+        default: "clusters/eldertree/{project}/{component}-deployment.yaml"
+        type: string
+      image-registry:
+        description: "Container registry"
+        required: false
+        default: "ghcr.io"
+        type: string
+      image-owner:
+        description: "Image owner/namespace"
+        required: false
+        default: ""
+        type: string
+      auto-merge:
+        description: "Enable auto-merge on PR"
+        required: false
+        default: true
+        type: boolean
+      base-branch:
+        description: "Base branch for PR"
+        required: false
+        default: "main"
+        type: string
+    outputs:
+      pr-number:
+        description: "Created PR number"
+        value: ${{ jobs.update-image.outputs.pr-number }}
+      pr-url:
+        description: "Created PR URL"
+        value: ${{ jobs.update-image.outputs.pr-url }}
+      skipped:
+        description: "Whether update was skipped (already at version)"
+        value: ${{ jobs.update-image.outputs.skipped }}
+
+jobs:
+  update-image:
+    name: Update Image Tag
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    outputs:
+      pr-number: ${{ steps.create-pr.outputs.pull-request-number }}
+      pr-url: ${{ steps.create-pr.outputs.pull-request-url }}
+      skipped: ${{ steps.update.outputs.skip }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Determine paths
+        id: paths
+        run: |
+          PATTERN="${{ inputs.deployment-path-pattern }}"
+          DEPLOYMENT_FILE="${PATTERN//\{project\}/${{ inputs.project }}}"
+          DEPLOYMENT_FILE="${DEPLOYMENT_FILE//\{component\}/${{ inputs.component }}}"
+
+          # Determine image owner
+          OWNER="${{ inputs.image-owner }}"
+          if [ -z "$OWNER" ]; then
+            OWNER="${{ github.repository_owner }}"
+          fi
+
+          IMAGE_NAME="${{ inputs.image-registry }}/${OWNER}/${{ inputs.project }}-${{ inputs.component }}"
+
+          echo "deployment_file=$DEPLOYMENT_FILE" >> $GITHUB_OUTPUT
+          echo "image_name=$IMAGE_NAME" >> $GITHUB_OUTPUT
+
+          echo "Deployment file: $DEPLOYMENT_FILE"
+          echo "Image name: $IMAGE_NAME"
+
+      - name: Validate deployment file
+        run: |
+          if [ ! -f "${{ steps.paths.outputs.deployment_file }}" ]; then
+            echo "::error::Deployment file not found: ${{ steps.paths.outputs.deployment_file }}"
+            exit 1
+          fi
+
+      - name: Setup yq
+        uses: mikefarah/yq@v4
+
+      - name: Update image tag
+        id: update
+        run: |
+          DEPLOYMENT_FILE="${{ steps.paths.outputs.deployment_file }}"
+          IMAGE_NAME="${{ steps.paths.outputs.image_name }}"
+          NEW_IMAGE="${IMAGE_NAME}:${{ inputs.image-tag }}"
+
+          echo "Updating $DEPLOYMENT_FILE with image: $NEW_IMAGE"
+
+          # Get current image for comparison
+          CURRENT_IMAGE=$(yq '.spec.template.spec.containers[0].image' "$DEPLOYMENT_FILE" | head -1)
+          echo "Current image: $CURRENT_IMAGE"
+
+          if [ "$CURRENT_IMAGE" = "$NEW_IMAGE" ]; then
+            echo "Image tag already up to date, skipping"
+            echo "skip=true" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          # Update image tag using sed (preserves YAML structure and Flux markers)
+          sed -i "s|image: ${IMAGE_NAME}:[^ ]*|image: ${NEW_IMAGE}|g" "$DEPLOYMENT_FILE"
+
+          # Verify the change
+          UPDATED_IMAGE=$(grep "image: ${IMAGE_NAME}" "$DEPLOYMENT_FILE" | head -1)
+          echo "Updated to: $UPDATED_IMAGE"
+
+          echo "skip=false" >> $GITHUB_OUTPUT
+
+      - name: Create Pull Request
+        if: steps.update.outputs.skip != 'true'
+        id: create-pr
+        uses: peter-evans/create-pull-request@v6
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: "chore(${{ inputs.project }}): update ${{ inputs.component }} image to ${{ inputs.image-tag }}"
+          title: "chore(${{ inputs.project }}): update ${{ inputs.component }} image to ${{ inputs.image-tag }}"
+          body: |
+            ## Automated Image Update
+
+            Updates **${{ inputs.project }}-${{ inputs.component }}** container image to `${{ inputs.image-tag }}`.
+
+            | Field | Value |
+            |-------|-------|
+            | Project | `${{ inputs.project }}` |
+            | Component | `${{ inputs.component }}` |
+            | New Tag | `${{ inputs.image-tag }}` |
+            | Image | `${{ steps.paths.outputs.image_name }}:${{ inputs.image-tag }}` |
+            | Deployment | `${{ steps.paths.outputs.deployment_file }}` |
+
+            ---
+            *Triggered by: ${{ github.event_name }}*
+          branch: deploy/${{ inputs.project }}-${{ inputs.component }}-${{ inputs.image-tag }}
+          base: ${{ inputs.base-branch }}
+          labels: |
+            ${{ inputs.project }}
+            image-update
+            auto-pr
+          delete-branch: true
+
+      - name: Enable Auto-Merge
+        if: steps.update.outputs.skip != 'true' && steps.create-pr.outputs.pull-request-number && inputs.auto-merge
+        run: |
+          gh pr merge --auto --squash "${{ steps.create-pr.outputs.pull-request-number }}"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Summary
+        run: |
+          echo "## GitOps Image Update" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ steps.update.outputs.skip }}" = "true" ]; then
+            echo "**Status:** Skipped (already at target version)" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "**Status:** PR Created" >> $GITHUB_STEP_SUMMARY
+            echo "**PR:** ${{ steps.create-pr.outputs.pull-request-url }}" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Field | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Project | ${{ inputs.project }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Component | ${{ inputs.component }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Tag | ${{ inputs.image-tag }} |" >> $GITHUB_STEP_SUMMARY
