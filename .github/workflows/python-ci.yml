@@ -1,0 +1,153 @@
+name: Python CI
+
+on:
+  workflow_call:
+    inputs:
+      python-version:
+        description: "Python version to use"
+        required: false
+        default: "3.11"
+        type: string
+      working-directory:
+        description: "Working directory for commands"
+        required: false
+        default: "."
+        type: string
+      package-manager:
+        description: "Package manager: poetry or pip"
+        required: false
+        default: "poetry"
+        type: string
+      run-ruff:
+        description: "Run ruff linter"
+        required: false
+        default: true
+        type: boolean
+      run-mypy:
+        description: "Run mypy type checker"
+        required: false
+        default: true
+        type: boolean
+      run-pytest:
+        description: "Run pytest tests"
+        required: false
+        default: true
+        type: boolean
+      mypy-paths:
+        description: "Paths for mypy to check (space-separated)"
+        required: false
+        default: "src/"
+        type: string
+      pytest-args:
+        description: "Additional pytest arguments"
+        required: false
+        default: ""
+        type: string
+      poetry-groups:
+        description: "Poetry groups to exclude (e.g., --without capture)"
+        required: false
+        default: ""
+        type: string
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ inputs.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ inputs.python-version }}
+
+      # Poetry setup
+      - name: Install Poetry
+        if: inputs.package-manager == 'poetry'
+        run: |
+          curl -sSL https://install.python-poetry.org | python3 -
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+
+      - name: Configure Poetry
+        if: inputs.package-manager == 'poetry'
+        run: poetry config virtualenvs.create true --local
+
+      - name: Cache Poetry dependencies
+        if: inputs.package-manager == 'poetry'
+        uses: actions/cache@v4
+        with:
+          path: ${{ inputs.working-directory }}/.venv
+          key: ${{ runner.os }}-poetry-${{ inputs.python-version }}-${{ hashFiles(format('{0}/poetry.lock', inputs.working-directory)) }}
+          restore-keys: |
+            ${{ runner.os }}-poetry-${{ inputs.python-version }}-
+
+      - name: Install dependencies (Poetry)
+        if: inputs.package-manager == 'poetry'
+        run: poetry install --no-interaction ${{ inputs.poetry-groups }}
+
+      # Pip setup
+      - name: Cache pip dependencies
+        if: inputs.package-manager == 'pip'
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ inputs.python-version }}-${{ hashFiles(format('{0}/requirements*.txt', inputs.working-directory)) }}
+          restore-keys: |
+            ${{ runner.os }}-pip-${{ inputs.python-version }}-
+
+      - name: Install dependencies (pip)
+        if: inputs.package-manager == 'pip'
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements-dev.txt ]; then
+            pip install -r requirements-dev.txt
+          elif [ -f requirements.txt ]; then
+            pip install -r requirements.txt
+            pip install ruff mypy pytest
+          fi
+
+      # Linting and testing
+      - name: Run Ruff
+        if: inputs.run-ruff
+        run: |
+          if [ "${{ inputs.package-manager }}" = "poetry" ]; then
+            poetry run ruff check .
+          else
+            ruff check .
+          fi
+
+      - name: Run Mypy
+        if: inputs.run-mypy
+        run: |
+          if [ "${{ inputs.package-manager }}" = "poetry" ]; then
+            poetry run mypy ${{ inputs.mypy-paths }}
+          else
+            mypy ${{ inputs.mypy-paths }}
+          fi
+
+      - name: Run Pytest
+        if: inputs.run-pytest
+        run: |
+          if [ "${{ inputs.package-manager }}" = "poetry" ]; then
+            poetry run pytest ${{ inputs.pytest-args }}
+          else
+            pytest ${{ inputs.pytest-args }}
+          fi
+
+      - name: Summary
+        run: |
+          echo "## Python CI Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Python:** ${{ inputs.python-version }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Package Manager:** ${{ inputs.package-manager }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Working Directory:** ${{ inputs.working-directory }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Check | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Ruff | ${{ inputs.run-ruff && '✅ Passed' || '⏭️ Skipped' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Mypy | ${{ inputs.run-mypy && '✅ Passed' || '⏭️ Skipped' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Pytest | ${{ inputs.run-pytest && '✅ Passed' || '⏭️ Skipped' }} |" >> $GITHUB_STEP_SUMMARY
