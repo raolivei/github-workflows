@@ -1,0 +1,128 @@
+name: Terraform Apply
+
+on:
+  workflow_call:
+    inputs:
+      working-directory:
+        description: "Terraform working directory"
+        required: false
+        default: "terraform"
+        type: string
+      terraform-version:
+        description: "Terraform version"
+        required: false
+        default: "1.6.0"
+        type: string
+      pr-number:
+        description: "PR number to apply (for artifact download)"
+        required: false
+        default: ""
+        type: string
+      auto-approve:
+        description: "Auto-approve the apply"
+        required: false
+        default: true
+        type: boolean
+    secrets:
+      AWS_ACCESS_KEY_ID:
+        description: "AWS Access Key ID"
+        required: false
+      AWS_SECRET_ACCESS_KEY:
+        description: "AWS Secret Access Key"
+        required: false
+      AWS_REGION:
+        description: "AWS Region"
+        required: false
+      TF_API_TOKEN:
+        description: "Terraform Cloud API Token"
+        required: false
+      CLOUDFLARE_API_TOKEN:
+        description: "Cloudflare API Token"
+        required: false
+
+jobs:
+  apply:
+    name: "Terraform Apply"
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ inputs.terraform-version }}
+          cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}
+
+      - name: Configure AWS credentials
+        if: secrets.AWS_ACCESS_KEY_ID != ''
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION || 'us-east-1' }}
+
+      - name: Set Cloudflare Token
+        if: secrets.CLOUDFLARE_API_TOKEN != ''
+        run: echo "CLOUDFLARE_API_TOKEN=${{ secrets.CLOUDFLARE_API_TOKEN }}" >> $GITHUB_ENV
+
+      - name: Download Plan Artifact
+        if: inputs.pr-number != ''
+        uses: dawidd6/action-download-artifact@v3
+        with:
+          workflow: terraform-pr-plan.yml
+          pr: ${{ inputs.pr-number }}
+          name: terraform-plan-${{ inputs.pr-number }}
+          path: ${{ inputs.working-directory }}/
+        continue-on-error: true
+
+      - name: Terraform Init
+        run: terraform init
+
+      - name: Check for existing plan
+        id: check_plan
+        run: |
+          if [ -f "tfplan" ]; then
+            echo "plan_exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "plan_exists=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create new plan if needed
+        if: steps.check_plan.outputs.plan_exists == 'false'
+        run: terraform plan -input=false -out=tfplan
+
+      - name: Terraform Apply
+        id: apply
+        run: |
+          if [ "${{ inputs.auto-approve }}" = "true" ]; then
+            terraform apply -input=false tfplan 2>&1 | tee apply.log
+          else
+            terraform apply -input=false -auto-approve=false tfplan 2>&1 | tee apply.log
+          fi
+        continue-on-error: true
+
+      - name: Upload Apply Log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: terraform-apply-log-${{ github.run_id }}
+          path: ${{ inputs.working-directory }}/apply.log
+          retention-days: 30
+
+      - name: Summary
+        run: |
+          echo "## Terraform Apply" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Status:** ${{ steps.apply.outcome }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Working Directory:** ${{ inputs.working-directory }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Terraform Version:** ${{ inputs.terraform-version }}" >> $GITHUB_STEP_SUMMARY
+
+      - name: Fail if apply failed
+        if: steps.apply.outcome == 'failure'
+        run: exit 1
