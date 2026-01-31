@@ -129,3 +129,24 @@ Update Kubernetes manifests with new image tags and create PRs.
 - `manifest-path` (required) - Path to K8s manifest
 - `image-tag` (required) - New image tag
 - `auto-merge` (default: `false`) - Auto-merge the PR
+
+## Repositories Using These Workflows
+
+| Repository | Workflows |
+|------------|-----------|
+| pitanga-website | docker-build |
+| ollie | docker-matrix, python-ci |
+| pi-fleet-blog | static-site-pages |
+| eldertree-docs | static-site-pages, docker-build |
+| canopy | docker-build (x2), python-ci, node-ci |
+| us-law-severity-map | docker-build |
+
+## Contributing
+
+To update workflows:
+
+1. Create a feature branch
+2. Make changes to workflow files
+3. Test by updating a repo to reference the branch: `@feature-branch`
+4. Once verified, merge to main
+5. Update repos back to `@main`
