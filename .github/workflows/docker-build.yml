@@ -102,7 +102,7 @@ jobs:
             type=semver,pattern=v{{major}},value=v${{ steps.version.outputs.version }}
             type=ref,event=branch
             type=ref,event=pr
-            type=sha,prefix={{branch}}-,enable={{is_default_branch}}
+            type=sha,prefix=sha-
             type=raw,value=latest,enable={{is_default_branch}}
 
       - name: Set up Docker Buildx
