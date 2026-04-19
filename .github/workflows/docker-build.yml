@@ -47,6 +47,17 @@ on:
         required: false
         default: true
         type: boolean
+      create-git-tag:
+        description: |
+          When true, after a successful image push to the registry, create
+          an annotated git tag ``v<VERSION>`` on the current commit if it
+          does not already exist, and push it to ``origin``. Use only on
+          default-branch ``push`` workflows (not PRs). Parallel jobs
+          (e.g. api + frontend) may race; the second push is a no-op if
+          the tag exists. Requires ``contents: write`` on the caller job.
+        required: false
+        default: false
+        type: boolean
     secrets:
       REGISTRY_TOKEN:
         description: "Registry authentication token"
@@ -240,3 +251,42 @@ jobs:
           if [ -n "${DIGEST}" ]; then
             echo "::notice title=Built image::${IMAGE}:v${VERSION}@${DIGEST}"
           fi
+
+  # Optional: mirror the container semver (from the repo ``VERSION`` file) as a
+  # git tag so releases stay traceable next to GHCR tags. Safe when multiple
+  # jobs run in parallel — only the first ``git push`` creates the tag.
+  git-version-tag:
+    name: Git tag (semver from VERSION file)
+    needs: build
+    if: >
+      success() &&
+      inputs.create-git-tag == true &&
+      inputs.push == true &&
+      github.event_name == 'push' &&
+      github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Create and push annotated tag
+        env:
+          VERSION: ${{ needs.build.outputs.version }}
+          IMAGE_NAME: ${{ inputs.image-name }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG="v${VERSION}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git ls-remote --tags origin "refs/tags/${TAG}" | grep -q .; then
+            echo "::notice title=Git tag exists::${TAG} already on origin — skipping (idempotent)"
+            exit 0
+          fi
+          git tag -a "${TAG}" -m "${IMAGE_NAME}: ${TAG} (CI image push)"
+          git push "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "refs/tags/${TAG}"
+          echo "::notice title=Git tag pushed::${TAG} → ${GITHUB_SHA}"
