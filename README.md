@@ -58,6 +58,16 @@ Build and push a single Docker image to GHCR.
 **Secrets:**
 - `REGISTRY_TOKEN` (required) - Registry authentication token
 
+**Caller `permissions` (required):** The workflow includes an optional job that can push git tags (`create-git-tag: true`) and declares `contents: write`. GitHub validates the **called** workflow against the **caller's** maximum permissions, so the **calling** workflow must set at least:
+
+```yaml
+permissions:
+  contents: write
+  packages: write
+```
+
+Even if you never set `create-git-tag: true`, the nested job still exists in the reusable workflow; `contents: read` on the caller will fail validation with an error like: *nested job 'git-version-tag' is requesting 'contents: write', but is only allowed 'contents: read'*.
+
 ### docker-matrix.yml
 
 Build multiple services in parallel using a matrix strategy.
