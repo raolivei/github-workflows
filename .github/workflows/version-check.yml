@@ -1,0 +1,147 @@
+name: VERSION Check
+
+# Reusable workflow to enforce VERSION and CHANGELOG updates
+# Use in PR workflows for projects that use semantic versioning + FluxCD
+
+on:
+  workflow_call:
+    inputs:
+      content-paths:
+        description: 'Comma-separated list of paths that require VERSION bump (e.g., "src/,Dockerfile,package.json")'
+        required: false
+        type: string
+        default: 'src/,static/,Dockerfile,package.json,package-lock.json,requirements.txt,pyproject.toml'
+      exempt-paths:
+        description: 'Comma-separated list of exempt paths (e.g., ".github/,README.md,docs/")'
+        required: false
+        type: string
+        default: '.github/,README.md,LICENSE,.gitignore,docs/,*.md'
+
+jobs:
+  check-version:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout PR
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Get changed files
+        id: changed-files
+        run: |
+          # Get list of changed files in this PR
+          git fetch origin ${{ github.base_ref }}
+          CHANGED_FILES=$(git diff --name-only origin/${{ github.base_ref }}...HEAD)
+          echo "$CHANGED_FILES" > changed_files.txt
+          echo "Changed files:"
+          cat changed_files.txt
+
+      - name: Check if content modified
+        id: check-content
+        run: |
+          CONTENT_PATHS="${{ inputs.content-paths }}"
+          EXEMPT_PATHS="${{ inputs.exempt-paths }}"
+
+          CONTENT_MODIFIED=false
+
+          # Convert comma-separated inputs to arrays
+          IFS=',' read -ra CONTENT_ARRAY <<< "$CONTENT_PATHS"
+          IFS=',' read -ra EXEMPT_ARRAY <<< "$EXEMPT_PATHS"
+
+          while IFS= read -r file; do
+            # Skip empty lines
+            [ -z "$file" ] && continue
+
+            # Check if file is exempt
+            is_exempt=false
+            for exempt in "${EXEMPT_ARRAY[@]}"; do
+              exempt=$(echo "$exempt" | xargs) # trim whitespace
+              if [[ "$file" == $exempt* ]]; then
+                is_exempt=true
+                echo "  [EXEMPT] $file"
+                break
+              fi
+            done
+
+            if [ "$is_exempt" = true ]; then
+              continue
+            fi
+
+            # Check if file is in content paths
+            for path in "${CONTENT_ARRAY[@]}"; do
+              path=$(echo "$path" | xargs) # trim whitespace
+              if [[ "$file" == $path* ]]; then
+                echo "  [CONTENT] $file"
+                CONTENT_MODIFIED=true
+                break
+              fi
+            done
+          done < changed_files.txt
+
+          echo "content_modified=$CONTENT_MODIFIED" >> $GITHUB_OUTPUT
+
+      - name: Check VERSION updated
+        if: steps.check-content.outputs.content_modified == 'true'
+        run: |
+          if git diff --name-only origin/${{ github.base_ref }}...HEAD | grep -q '^VERSION$'; then
+            echo "✓ VERSION file updated"
+          else
+            echo "::error::Content changes detected but VERSION file not updated"
+            echo ""
+            echo "Modified content files:"
+            git diff --name-only origin/${{ github.base_ref }}...HEAD | while read file; do
+              echo "  - $file"
+            done
+            echo ""
+            echo "Required actions:"
+            echo "1. Update VERSION file (e.g., 0.2.3 → 0.2.4)"
+            echo "2. Update CHANGELOG.md with your changes"
+            echo "3. Commit and push"
+            echo ""
+            echo "Why? FluxCD ImageUpdateAutomation only triggers on new semantic version tags."
+            exit 1
+          fi
+
+      - name: Check CHANGELOG updated
+        if: steps.check-content.outputs.content_modified == 'true'
+        run: |
+          if git diff --name-only origin/${{ github.base_ref }}...HEAD | grep -q '^CHANGELOG.md$'; then
+            echo "✓ CHANGELOG.md updated"
+          else
+            echo "::error::VERSION bumped but CHANGELOG.md not updated"
+            echo ""
+            echo "Required action: Update CHANGELOG.md with your changes"
+            exit 1
+          fi
+
+      - name: Validate VERSION format
+        if: steps.check-content.outputs.content_modified == 'true'
+        run: |
+          VERSION=$(cat VERSION)
+          if [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "✓ VERSION format valid: $VERSION"
+          else
+            echo "::error::VERSION file has invalid format: $VERSION"
+            echo "Expected: MAJOR.MINOR.PATCH (e.g., 0.2.4)"
+            exit 1
+          fi
+
+      - name: Summary
+        if: steps.check-content.outputs.content_modified == 'true'
+        run: |
+          VERSION=$(cat VERSION)
+          echo "### ✅ VERSION Check Passed" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **VERSION**: \`$VERSION\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **CHANGELOG**: Updated" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Docker image will be tagged as \`v$VERSION\` after merge." >> $GITHUB_STEP_SUMMARY
+
+      - name: No content changes
+        if: steps.check-content.outputs.content_modified == 'false'
+        run: |
+          echo "### ℹ️ VERSION Check Skipped" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "No content changes detected (documentation/config only)." >> $GITHUB_STEP_SUMMARY
+          echo "VERSION bump not required." >> $GITHUB_STEP_SUMMARY
