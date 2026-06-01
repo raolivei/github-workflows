@@ -10,7 +10,7 @@ Centralized reusable GitHub Actions workflows for personal projects.
 | `docker-matrix.yml` | Build multiple services in parallel (arm64) |
 | `python-ci.yml` | Python CI with ruff, mypy, and pytest |
 | `node-ci.yml` | Node.js CI with lint and test |
-| `static-site-pages.yml` | Deploy static sites to GitHub Pages |
+| `static-site-pages.yml` | Deploy static sites to GitHub Pages (VitePress, etc.) |
 | `terraform-pr.yml` | Terraform plan on PR with comment |
 | `terraform-apply.yml` | Terraform apply (manual trigger) |
 | `gitops-image-update.yml` | Update K8s manifests with new image tags |
