@@ -23,6 +23,11 @@ on:
         required: false
         default: "."
         type: string
+      pre-build-command:
+        description: "Optional shell command before npm ci (e.g. cluster-status sync)"
+        required: false
+        default: ""
+        type: string
     outputs:
       page_url:
         description: "Deployed page URL"
@@ -52,6 +57,10 @@ jobs:
           node-version: ${{ inputs.node-version }}
           cache: npm
           cache-dependency-path: ${{ inputs.working-directory }}/package-lock.json
+
+      - name: Pre-build (optional)
+        if: inputs.pre-build-command != ''
+        run: ${{ inputs.pre-build-command }}
 
       - name: Install dependencies
         run: npm ci
