@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- **`validate.yml`** — runs `actionlint` on push/PR to `main` (reusable workflows only run in caller repos).
+
 ### Changed
 
 - **README** — document only active workflows (`docker-build`, `static-site-pages`, `version-check`); note removed terraform/matrix workflows and merge-order for new inputs.
