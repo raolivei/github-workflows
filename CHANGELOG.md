@@ -4,6 +4,7 @@
 
 ### Added
 
+- **`docker-build.yml`** — optional `job-timeout-minutes` input (default 90) for QEMU/arm64 builds; caller jobs cannot set `timeout-minutes` when using `workflow_call`.
 - **`validate.yml`** — runs `actionlint` on push/PR to `main` (reusable workflows only run in caller repos).
 
 ### Changed
