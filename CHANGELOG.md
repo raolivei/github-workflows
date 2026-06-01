@@ -4,6 +4,7 @@
 
 ### Added
 
+- **`python-ci.yml`** — restored reusable Poetry/pip CI (ruff, mypy, pytest); required by `ollie` and other callers that still reference it.
 - **`docker-build.yml`** — optional `job-timeout-minutes` input (default 90) for QEMU/arm64 builds; caller jobs cannot set `timeout-minutes` when using `workflow_call`.
 - **`validate.yml`** — runs `actionlint` on push/PR to `main` (reusable workflows only run in caller repos).
 
