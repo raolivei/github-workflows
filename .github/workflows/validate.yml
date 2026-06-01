@@ -1,0 +1,31 @@
+# Validates reusable workflow YAML on push/PR to this repo.
+# Reusable workflows (workflow_call) do not run by themselves — this is the only
+# workflow that executes here; consumers (ollie, pi-fleet-blog, etc.) invoke the others.
+
+name: Validate workflows
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  actionlint:
+    name: Lint workflow files
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: actionlint
+        uses: rhysd/actionlint@v1.7.10
+        with:
+          # Shellcheck on inline scripts in reusable workflows is noisy (style/info);
+          # we only gate workflow YAML structure here. Callers still run their own CI.
+          args: -shellcheck=

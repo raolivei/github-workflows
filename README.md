@@ -11,6 +11,8 @@ Centralized reusable GitHub Actions workflows for personal projects.
 | `version-check.yml` | Enforce VERSION file bump on pull requests |
 
 > **Note:** Older workflow names (`terraform-pr.yml`, `docker-matrix.yml`, `python-ci.yml`, etc.) were removed from this repo. Past Action runs may still appear as failed in the UI; only the workflows above are active.
+>
+> **CI on this repo:** `validate.yml` runs `actionlint` on push/PR. Reusable workflows (`workflow_call`) are executed only when another repository calls them.
 
 ## Usage
 
