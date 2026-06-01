@@ -28,4 +28,4 @@ jobs:
         with:
           # Shellcheck on inline scripts in reusable workflows is noisy (style/info);
           # we only gate workflow YAML structure here. Callers still run their own CI.
-          args: -shellcheck
+          args: -shellcheck=
