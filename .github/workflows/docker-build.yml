@@ -79,6 +79,9 @@ on:
         description: "True when the build was skipped (content-hash already in registry)"
         value: ${{ jobs.build.outputs.skipped }}
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -94,7 +97,7 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
         with:
           # We only read the HEAD tree for the content hash, so a
           # shallow clone is enough and keeps checkout fast.
@@ -269,7 +272,7 @@ jobs:
       contents: write
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
