@@ -58,6 +58,15 @@ on:
         required: false
         default: false
         type: boolean
+      job-timeout-minutes:
+        description: |
+          Max minutes for the build job (arm64 via QEMU can exceed the
+          default 360 only when lowered by org policy; set 120 for heavy
+          Poetry/ML images). Not valid on the caller job when using
+          workflow_call — must be set here.
+        required: false
+        default: 90
+        type: number
     secrets:
       REGISTRY_TOKEN:
         description: "Registry authentication token"
@@ -85,6 +94,7 @@ env:
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: ${{ inputs.job-timeout-minutes }}
     permissions:
       contents: read
       packages: write
