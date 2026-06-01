@@ -83,7 +83,7 @@ Python testing and linting pipeline.
 Node.js testing and linting pipeline.
 
 **Inputs:**
-- `node-version` (default: `20`)
+- `node-version` (default: `24`)
 - `working-directory` (default: `.`)
 - `run-lint` (default: `true`)
 - `run-test` (default: `true`)
@@ -96,7 +96,7 @@ Build and deploy static sites to GitHub Pages.
 **Inputs:**
 - `build-command` (default: `npm run build`)
 - `output-directory` (default: `dist`)
-- `node-version` (default: `20`)
+- `node-version` (default: `24`)
 
 ### terraform-pr.yml
 
