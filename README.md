@@ -7,10 +7,11 @@ Centralized reusable GitHub Actions workflows for personal projects.
 | Workflow | Description |
 |----------|-------------|
 | `docker-build.yml` | Build and push arm64 Docker images to GHCR |
+| `python-ci.yml` | Ruff, mypy, pytest (Poetry or pip) |
 | `static-site-pages.yml` | Build and deploy static sites to GitHub Pages (VitePress, etc.) |
 | `version-check.yml` | Enforce VERSION file bump on pull requests |
 
-> **Note:** Older workflow names (`terraform-pr.yml`, `docker-matrix.yml`, `python-ci.yml`, etc.) were removed from this repo. Past Action runs may still appear as failed in the UI; only the workflows above are active.
+> **Note:** Removed workflows (`terraform-pr.yml`, `docker-matrix.yml`, etc.) are not in this repo. Use a caller job matrix instead of `docker-matrix.yml`.
 >
 > **CI on this repo:** `validate.yml` runs `actionlint` on push/PR. Reusable workflows (`workflow_call`) are executed only when another repository calls them.
 
