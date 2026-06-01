@@ -4,6 +4,7 @@
 
 ### Changed
 
+- **README** — document only active workflows (`docker-build`, `static-site-pages`, `version-check`); note removed terraform/matrix workflows and merge-order for new inputs.
 - Reusable workflows: bump `actions/checkout` to v6, `actions/setup-node` to v6, Pages actions to v5.
 - `static-site-pages.yml`: default Node.js for site builds is **24** (was 20).
 - **`static-site-pages.yml`:** optional `pre-build-command` input (used by blog/docs cluster-status sync).

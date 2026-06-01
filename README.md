@@ -7,13 +7,10 @@ Centralized reusable GitHub Actions workflows for personal projects.
 | Workflow | Description |
 |----------|-------------|
 | `docker-build.yml` | Build and push arm64 Docker images to GHCR |
-| `docker-matrix.yml` | Build multiple services in parallel (arm64) |
-| `python-ci.yml` | Python CI with ruff, mypy, and pytest |
-| `node-ci.yml` | Node.js CI with lint and test |
-| `static-site-pages.yml` | Deploy static sites to GitHub Pages (VitePress, etc.) |
-| `terraform-pr.yml` | Terraform plan on PR with comment |
-| `terraform-apply.yml` | Terraform apply (manual trigger) |
-| `gitops-image-update.yml` | Update K8s manifests with new image tags |
+| `static-site-pages.yml` | Build and deploy static sites to GitHub Pages (VitePress, etc.) |
+| `version-check.yml` | Enforce VERSION file bump on pull requests |
+
+> **Note:** Older workflow names (`terraform-pr.yml`, `docker-matrix.yml`, `python-ci.yml`, etc.) were removed from this repo. Past Action runs may still appear as failed in the UI; only the workflows above are active.
 
 ## Usage
 
@@ -28,125 +25,82 @@ on:
 
 jobs:
   build:
-    uses: raolivei/github-workflows/.github/workflows/docker-build.yml@v1
+    uses: raolivei/github-workflows/.github/workflows/docker-build.yml@main
     with:
       image-name: my-app
     secrets:
       REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 ```
 
+### Multiple Docker images
+
+Use a job matrix in the **caller** repo (there is no `docker-matrix.yml`):
+
+```yaml
+jobs:
+  build:
+    strategy:
+      matrix:
+        service: [api, frontend]
+    uses: raolivei/github-workflows/.github/workflows/docker-build.yml@main
+    with:
+      image-name: my-app-${{ matrix.service }}
+      dockerfile: docker/${{ matrix.service }}.Dockerfile
+    secrets:
+      REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+```
+
 ## Versioning
 
-- `@v1` - Stable major version (recommended)
-- `@v1.0.0` - Specific version
-- `@main` - Latest development (use with caution)
+- `@main` — latest (typical for personal repos)
+- Pin to a commit SHA when you need a frozen reusable workflow definition
 
-## Workflows Details
+**Merge order:** When adding a new input to a reusable workflow, merge **github-workflows** first, then update caller repos. Otherwise deploy workflows fail at startup with “Invalid input”.
+
+## Workflow Details
 
 ### docker-build.yml
 
 Build and push a single Docker image to GHCR.
 
-**Inputs:**
-- `image-name` (required) - Image name without registry prefix
-- `context` (default: `.`) - Docker build context
-- `dockerfile` (default: `Dockerfile`) - Path to Dockerfile
-- `platforms` (default: `linux/arm64`) - Target platforms
-- `registry` (default: `ghcr.io`) - Container registry
-- `push` (default: `true`) - Push image after build
+**Inputs:** `image-name` (required), `context`, `dockerfile`, `platforms`, `registry`, `push`, `skip-if-already-built`, `create-git-tag`
 
-**Secrets:**
-- `REGISTRY_TOKEN` (required) - Registry authentication token
-
-### docker-matrix.yml
-
-Build multiple services in parallel using a matrix strategy.
-
-**Inputs:**
-- `services` (required) - JSON array of service configs
-- `platforms` (default: `linux/arm64`) - Target platforms
-
-### python-ci.yml
-
-Python testing and linting pipeline.
-
-**Inputs:**
-- `python-version` (default: `3.11`)
-- `working-directory` (default: `.`)
-- `package-manager` (default: `poetry`) - `poetry` or `pip`
-- `run-ruff` (default: `true`)
-- `run-mypy` (default: `true`)
-- `run-pytest` (default: `true`)
-
-### node-ci.yml
-
-Node.js testing and linting pipeline.
-
-**Inputs:**
-- `node-version` (default: `24`)
-- `working-directory` (default: `.`)
-- `run-lint` (default: `true`)
-- `run-test` (default: `true`)
-- `run-build` (default: `false`)
+**Secrets:** `REGISTRY_TOKEN` (required)
 
 ### static-site-pages.yml
 
 Build and deploy static sites to GitHub Pages.
 
-**Inputs:**
-- `build-command` (default: `npm run build`)
-- `output-directory` (default: `dist`)
-- `node-version` (default: `24`)
+**Inputs:** `node-version` (default `24`), `build-command`, `output-directory`, `working-directory`, `pre-build-command` (optional shell step before `npm ci`)
 
-### terraform-pr.yml
+**Example (cluster status sync):**
 
-Run Terraform plan on PRs and post results as comments.
+```yaml
+uses: raolivei/github-workflows/.github/workflows/static-site-pages.yml@main
+with:
+  node-version: "24"
+  pre-build-command: bash scripts/sync-cluster-status.sh
+  build-command: npm run build
+  output-directory: .vitepress/dist
+```
 
-**Inputs:**
-- `working-directory` (default: `terraform/`)
-- `terraform-version` (default: `1.5.0`)
-- `post-plan-comment` (default: `true`)
+### version-check.yml
 
-**Secrets:**
-- `TF_API_TOKEN` or cloud provider credentials
-
-### terraform-apply.yml
-
-Manually trigger Terraform apply.
-
-**Inputs:**
-- `working-directory` (default: `terraform/`)
-- `terraform-version` (default: `1.5.0`)
-
-**Secrets:**
-- `TF_API_TOKEN` or cloud provider credentials
-
-### gitops-image-update.yml
-
-Update Kubernetes manifests with new image tags and create PRs.
-
-**Inputs:**
-- `manifest-path` (required) - Path to K8s manifest
-- `image-tag` (required) - New image tag
-- `auto-merge` (default: `false`) - Auto-merge the PR
+Fails the PR if `VERSION` was not bumped. Used by ollie and similar repos.
 
 ## Repositories Using These Workflows
 
 | Repository | Workflows |
 |------------|-----------|
-| pitanga-website | docker-build |
-| ollie | docker-matrix, python-ci |
 | pi-fleet-blog | static-site-pages |
 | eldertree-docs | static-site-pages, docker-build |
-| canopy | docker-build (x2), python-ci, node-ci |
-| us-law-severity-map | docker-build |
+| ollie | docker-build (matrix caller) |
+| canopy, swimTO, elder, journey, … | docker-build |
+| ollie (PR) | version-check |
 
 ## Contributing
 
-To update workflows:
-
 1. Create a feature branch
-2. Make changes to workflow files
-3. Test by updating a repo to reference the branch: `@feature-branch`
-4. Once verified, merge to main
-5. Update repos back to `@main`
+2. Change workflow files
+3. Point a consumer repo at `@your-branch` and verify
+4. Merge to `main`, then update consumers
