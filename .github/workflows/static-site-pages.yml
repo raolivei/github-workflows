@@ -28,6 +28,11 @@ on:
         required: false
         default: ""
         type: string
+      runs-on:
+        description: "Runner labels (e.g. 'ubuntu-latest' or '\"self-hosted\"')"
+        required: false
+        default: "ubuntu-latest"
+        type: string
     outputs:
       page_url:
         description: "Deployed page URL"
@@ -43,7 +48,7 @@ env:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(inputs.runs-on) }}
     defaults:
       run:
         working-directory: ${{ inputs.working-directory }}
