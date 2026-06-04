@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **`docker-build.yml`** — `runs-on` default `ubuntu-latest` no longer passed through `fromJSON()` (fixes caller workflows that omit the input).
+
 ### Added
 
 - **`python-ci.yml`** — restored reusable Poetry/pip CI (ruff, mypy, pytest); required by `ollie` and other callers that still reference it.
