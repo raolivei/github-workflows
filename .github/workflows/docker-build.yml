@@ -67,6 +67,13 @@ on:
         required: false
         default: 90
         type: number
+      runs-on:
+        description: |
+          Runner labels (JSON array or string). Use ["self-hosted", "Linux", "ARM64"]
+          for Eldertree runners, or "ubuntu-latest" (default) for GitHub-hosted.
+        required: false
+        default: "ubuntu-latest"
+        type: string
     secrets:
       REGISTRY_TOKEN:
         description: "Registry authentication token"
@@ -93,7 +100,7 @@ env:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(inputs.runs-on) }}
     timeout-minutes: ${{ inputs.job-timeout-minutes }}
     permissions:
       contents: read
