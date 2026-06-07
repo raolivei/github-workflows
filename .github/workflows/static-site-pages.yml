@@ -31,7 +31,7 @@ on:
       runs-on:
         description: "Runner labels (string or JSON array). Default self-hosted (Eldertree ARC)."
         required: false
-        default: "ubuntu-latest"
+        default: "self-hosted"
         type: string
     outputs:
       page_url:
