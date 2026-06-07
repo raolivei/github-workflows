@@ -19,7 +19,7 @@ on:
       runs-on:
         description: "Runner labels. Default self-hosted (Eldertree ARC)."
         required: false
-        default: "ubuntu-latest"
+        default: "self-hosted"
         type: string
 
 env:
