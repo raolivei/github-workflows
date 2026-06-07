@@ -29,9 +29,9 @@ on:
         default: ""
         type: string
       runs-on:
-        description: "Runner labels (e.g. 'ubuntu-latest' or '\"self-hosted\"')"
+        description: "Runner labels (string or JSON array). Default self-hosted (Eldertree ARC)."
         required: false
-        default: "ubuntu-latest"
+        default: "self-hosted"
         type: string
     outputs:
       page_url:
@@ -48,7 +48,7 @@ env:
 
 jobs:
   build:
-    runs-on: ${{ fromJSON(inputs.runs-on) }}
+    runs-on: ${{ startsWith(inputs['runs-on'], '[') && fromJSON(inputs['runs-on']) || inputs['runs-on'] }}
     defaults:
       run:
         working-directory: ${{ inputs.working-directory }}
@@ -84,7 +84,7 @@ jobs:
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ startsWith(inputs['runs-on'], '[') && fromJSON(inputs['runs-on']) || inputs['runs-on'] }}
     needs: build
     outputs:
       page_url: ${{ steps.deployment.outputs.page_url }}

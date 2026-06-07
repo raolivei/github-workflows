@@ -14,6 +14,7 @@
 
 ### Changed
 
+- **Default runner: Eldertree self-hosted** — `docker-build`, `python-ci`, `static-site-pages`, and `version-check` default to `runs-on: self-hosted` (ARC on K3s). Pass `runs-on: ubuntu-latest` to opt out. `validate.yml` runs on self-hosted.
 - **README** — document only active workflows (`docker-build`, `static-site-pages`, `version-check`); note removed terraform/matrix workflows and merge-order for new inputs.
 - Reusable workflows: bump `actions/checkout` to v6, `actions/setup-node` to v6, Pages actions to v5.
 - `static-site-pages.yml`: default Node.js for site builds is **24** (was 20).
