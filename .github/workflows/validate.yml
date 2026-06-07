@@ -19,7 +19,7 @@ env:
 jobs:
   actionlint:
     name: Lint workflow files
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
 

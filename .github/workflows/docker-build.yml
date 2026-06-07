@@ -72,7 +72,7 @@ on:
           Runner labels (JSON array or string). Use ["self-hosted", "Linux", "ARM64"]
           for Eldertree runners (default), or "ubuntu-latest" for GitHub-hosted.
         required: false
-        default: "self-hosted"
+        default: "ubuntu-latest"
         type: string
     secrets:
       REGISTRY_TOKEN:
