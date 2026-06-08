@@ -23,9 +23,22 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - name: actionlint
-        uses: rhysd/actionlint@v1.7.10
-        with:
-          # Shellcheck on inline scripts in reusable workflows is noisy (style/info);
-          # we only gate workflow YAML structure here. Callers still run their own CI.
-          args: -shellcheck=
+      # Binary install — rhysd/actionlint Docker action rebuilds on each run and fails on
+      # Eldertree ARC (Alpine apk DNS / py3-pyflakes). Prebuilt release works on arm64.
+      - name: Install actionlint
+        run: |
+          set -euo pipefail
+          VERSION=v1.7.10
+          ARCH="$(uname -m)"
+          case "$ARCH" in
+            aarch64|arm64) ASSET=actionlint_1.7.10_linux_arm64.tar.gz ;;
+            x86_64|amd64)  ASSET=actionlint_1.7.10_linux_amd64.tar.gz ;;
+            *) echo "unsupported arch: $ARCH" >&2; exit 1 ;;
+          esac
+          curl -sSfL "https://github.com/rhysd/actionlint/releases/download/${VERSION}/${ASSET}" -o actionlint.tar.gz
+          tar xzf actionlint.tar.gz actionlint
+          sudo install -m 0755 actionlint /usr/local/bin/actionlint
+          actionlint -version
+
+      - name: Lint workflow files
+        run: actionlint -shellcheck=

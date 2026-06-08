@@ -4,6 +4,7 @@
 
 ### Fixed
 
+- **`validate.yml`** — Install actionlint from GitHub release binary instead of `rhysd/actionlint` Docker action (Docker rebuild failed on Eldertree ARC: Alpine apk DNS / `py3-pyflakes`).
 - **`docker-build.yml`** — `runs-on` default `ubuntu-latest` no longer passed through `fromJSON()` (fixes caller workflows that omit the input).
 
 ### Added
