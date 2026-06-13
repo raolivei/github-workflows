@@ -1,0 +1,61 @@
+# File-based PR labeling (for actions/labeler)
+# Copy to your repo at .github/labeling/config.yml
+
+backend:
+  - changed-files:
+    - any-glob-to-any-file:
+      - 'backend/**'
+      - 'api/**'
+      - '**/*.py'
+
+frontend:
+  - changed-files:
+    - any-glob-to-any-file:
+      - 'frontend/**'
+      - 'ui/**'
+      - '**/*.tsx'
+      - '**/*.jsx'
+
+infrastructure:
+  - changed-files:
+    - any-glob-to-any-file:
+      - 'k8s/**'
+      - '**/Dockerfile'
+      - 'docker-compose.yml'
+      - 'helm/**'
+
+database:
+  - changed-files:
+    - any-glob-to-any-file:
+      - '**/migrations/**'
+      - '**/alembic/**'
+      - '**/models.py'
+
+ci-cd:
+  - changed-files:
+    - any-glob-to-any-file:
+      - '.github/workflows/**'
+      - '.github/actions/**'
+
+testing:
+  - changed-files:
+    - any-glob-to-any-file:
+      - '**/test_*.py'
+      - '**/*.test.ts'
+      - '**/*.test.tsx'
+      - '**/*.spec.ts'
+
+documentation:
+  - changed-files:
+    - any-glob-to-any-file:
+      - '**/*.md'
+      - 'docs/**'
+
+dependencies:
+  - changed-files:
+    - any-glob-to-any-file:
+      - 'requirements.txt'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'Pipfile'
+      - 'Pipfile.lock'

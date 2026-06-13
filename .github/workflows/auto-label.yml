@@ -1,0 +1,172 @@
+name: Auto Label
+
+on:
+  workflow_call:
+    inputs:
+      config_path:
+        description: 'Path to label configuration file (default: .github/labeling/config.yml)'
+        required: false
+        type: string
+        default: '.github/labeling/config.yml'
+      enable_pr_file_labeling:
+        description: 'Enable file-based labeling for PRs'
+        required: false
+        type: boolean
+        default: true
+      enable_content_labeling:
+        description: 'Enable content-based labeling (title/body)'
+        required: false
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
+jobs:
+  label-by-files:
+    name: Label by changed files
+    if: ${{ github.event_name == 'pull_request' && inputs.enable_pr_file_labeling }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/labeler@v5
+        with:
+          configuration-path: ${{ inputs.config_path }}
+          sync-labels: false
+
+  label-by-content:
+    name: Label by content
+    if: ${{ inputs.enable_content_labeling }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            .github/labeling
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Download classifier script
+        run: |
+          mkdir -p .github/labeling
+          curl -fsSL https://raw.githubusercontent.com/raolivei/github-workflows/main/.github/scripts/label-classifier.js \
+            -o .github/labeling/label-classifier.js
+
+      - name: Get issue/PR details
+        id: details
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const isIssue = context.eventName === 'issues';
+            const isPR = context.eventName === 'pull_request';
+
+            let title = '';
+            let body = '';
+            let isDraft = false;
+
+            if (isIssue) {
+              title = context.payload.issue.title;
+              body = context.payload.issue.body || '';
+            } else if (isPR) {
+              title = context.payload.pull_request.title;
+              body = context.payload.pull_request.body || '';
+              isDraft = context.payload.pull_request.draft;
+            }
+
+            core.setOutput('title', title);
+            core.setOutput('body', body);
+            core.setOutput('is_draft', isDraft);
+            core.setOutput('is_issue', isIssue);
+            core.setOutput('is_pr', isPR);
+
+      - name: Classify and apply labels
+        uses: actions/github-script@v7
+        env:
+          CONFIG_PATH: ${{ inputs.config_path }}
+          TITLE: ${{ steps.details.outputs.title }}
+          BODY: ${{ steps.details.outputs.body }}
+          IS_DRAFT: ${{ steps.details.outputs.is_draft }}
+          IS_ISSUE: ${{ steps.details.outputs.is_issue }}
+        with:
+          script: |
+            const fs = require('fs');
+            const yaml = require('js-yaml');
+
+            // Load config
+            let config = {};
+            try {
+              const configContent = fs.readFileSync(process.env.CONFIG_PATH, 'utf8');
+              config = yaml.load(configContent);
+            } catch (error) {
+              console.log('No config file found, using defaults');
+            }
+
+            // Simple pattern matching
+            const title = process.env.TITLE.toLowerCase();
+            const body = process.env.BODY.toLowerCase();
+            const labels = new Set();
+
+            // Type detection
+            if (title.match(/^(fix|bug):/)) labels.add('bug');
+            else if (title.match(/^(feat|feature):/)) labels.add('enhancement');
+            else if (title.match(/^docs?:/)) labels.add('documentation');
+            else if (title.match(/^\[epic\]/i)) labels.add('epic');
+            else if (title.match(/^chore:/)) labels.add('chore');
+
+            // Priority detection
+            if (title.match(/p0|priority.?0|critical/i)) labels.add('priority-P0');
+            else if (title.match(/p1|priority.?1/i)) labels.add('priority-P1');
+            else if (title.match(/p2|priority.?2/i)) labels.add('priority-P2');
+            else if (title.match(/p3|priority.?3/i)) labels.add('priority-P3');
+
+            // Project-specific patterns from config
+            if (config.project_patterns) {
+              for (const [label, patterns] of Object.entries(config.project_patterns)) {
+                const combined = title + ' ' + body;
+                if (patterns.some(p => combined.includes(p.toLowerCase()))) {
+                  labels.add(label);
+                }
+              }
+            }
+
+            // Area detection from config
+            if (config.area_patterns) {
+              for (const [label, patterns] of Object.entries(config.area_patterns)) {
+                const combined = title + ' ' + body;
+                if (patterns.some(p => combined.includes(p.toLowerCase()))) {
+                  labels.add(label);
+                }
+              }
+            }
+
+            // Draft PRs get 'wip' label
+            if (process.env.IS_DRAFT === 'true') {
+              labels.add('wip');
+            }
+
+            // Apply labels
+            if (labels.size > 0) {
+              const issueNumber = context.issue.number;
+              const currentLabels = context.payload.issue?.labels || context.payload.pull_request?.labels || [];
+              const currentLabelNames = currentLabels.map(l => l.name);
+
+              const newLabels = Array.from(labels).filter(l => !currentLabelNames.includes(l));
+
+              if (newLabels.length > 0) {
+                await github.rest.issues.addLabels({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: issueNumber,
+                  labels: newLabels
+                });
+
+                console.log(`Added labels: ${newLabels.join(', ')}`);
+              } else {
+                console.log('No new labels to add');
+              }
+            }
