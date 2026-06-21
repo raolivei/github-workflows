@@ -227,6 +227,11 @@ jobs:
             type=sha,prefix=sha-
             type=raw,value=content-${{ steps.content_hash.outputs.hash }}
             type=raw,value=latest,enable={{is_default_branch}}
+            # Strictly-monotonic tag for Flux ImagePolicy with
+            # ``filterTags + alphabetical`` — every default-branch build
+            # produces a higher value than the previous, with no human
+            # VERSION bump needed. Format: build-YYYYMMDDHHmmss-<sha>.
+            type=raw,value=build-{{date 'YYYYMMDDHHmmss'}}-{{sha}},enable={{is_default_branch}}
 
       - name: Build and push
         if: steps.probe.outputs.skipped != 'true'
