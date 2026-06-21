@@ -244,6 +244,34 @@ jobs:
             echo "No existing image at ${REF}; proceeding with build."
           fi
 
+      - name: Reconcile semver tag
+        # When the content-hash probe matched, the build below is skipped
+        # — including the metadata step that writes ``v$VERSION``. A
+        # release commit that only edits VERSION (or auto-bump on an
+        # otherwise-unchanged build context) leaves the build skipped,
+        # so without this step the new semver tag never appears in the
+        # registry and FluxCD never reconciles. ``imagetools create``
+        # copies the existing manifest to the new tag — no rebuild,
+        # idempotent, and a few hundred milliseconds.
+        if: steps.probe.outputs.skipped == 'true' && github.event_name == 'push' && inputs.push == true
+        env:
+          IMAGE: ${{ inputs.registry }}/${{ github.repository_owner }}/${{ inputs.image-name }}
+          VERSION: ${{ steps.version.outputs.version }}
+          NEW_DIGEST: ${{ steps.probe.outputs.digest }}
+        run: |
+          set -euo pipefail
+          SEMVER="${IMAGE}:v${VERSION}"
+          CUR_DIGEST=$(docker buildx imagetools inspect "${SEMVER}" 2>/dev/null | awk '/^Digest:/ {print $2; exit}' || true)
+          if [ -z "${CUR_DIGEST}" ]; then
+            docker buildx imagetools create --tag "${SEMVER}" "${IMAGE}@${NEW_DIGEST}"
+            echo "::notice title=Published v${VERSION}::${SEMVER}@${NEW_DIGEST}"
+          elif [ "${CUR_DIGEST}" = "${NEW_DIGEST}" ]; then
+            echo "::notice title=v${VERSION} already current::${SEMVER}@${CUR_DIGEST}"
+          else
+            echo "::error title=Refusing to overwrite v${VERSION}::${SEMVER} already exists at ${CUR_DIGEST} but this build's content is at ${NEW_DIGEST}. With auto-bump enabled this should never happen — investigate before re-running."
+            exit 1
+          fi
+
       - name: Set up QEMU
         if: steps.probe.outputs.skipped != 'true'
         uses: docker/setup-qemu-action@v4
