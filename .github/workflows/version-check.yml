@@ -1,16 +1,21 @@
 name: VERSION Check
 
 # Reusable workflow to enforce VERSION and CHANGELOG updates
-# Use in PR workflows for projects that use semantic versioning + FluxCD
+# Use in PR workflows for projects that use semantic versioning + FluxCD.
+#
+# Override `content-paths` if your repo's source layout differs from the
+# defaults below. Missing your layout in the default list means PRs that
+# touch app code can pass without bumping VERSION — and CI will then
+# overwrite the existing image tag in GHCR, which FluxCD ignores.
 
 on:
   workflow_call:
     inputs:
       content-paths:
-        description: 'Comma-separated list of paths that require VERSION bump (e.g., "src/,Dockerfile,package.json")'
+        description: 'Comma-separated list of paths that require VERSION bump (e.g., "apps/,src/,Dockerfile")'
         required: false
         type: string
-        default: 'src/,static/,Dockerfile,package.json,package-lock.json,requirements.txt,pyproject.toml'
+        default: 'src/,static/,apps/,services/,packages/,data-pipeline/,internal/,cmd/,pkg/,lib/,Dockerfile,package.json,package-lock.json,requirements.txt,pyproject.toml,go.mod,go.sum,Cargo.toml,Cargo.lock'
       exempt-paths:
         description: 'Comma-separated list of exempt paths (e.g., ".github/,README.md,docs/")'
         required: false

@@ -208,6 +208,51 @@ jobs:
             echo "No existing image at ${REF}; proceeding with build."
           fi
 
+      - name: Reconcile semver tag
+        # The semver tag ``v$VERSION`` must end every push build pointing
+        # at this build's content digest. Three branches collapse to one
+        # rule: compare what's there to what should be there.
+        #
+        # * absent       → write it (cheap manifest copy, no rebuild).
+        #                  Catches release commits that only bump
+        #                  VERSION + CHANGELOG: the build context is
+        #                  unchanged, the content-hash probe matched,
+        #                  the build below is skipped — without this
+        #                  step the new tag never appears in GHCR.
+        # * matches NEW  → no-op.
+        # * diverges     → fail. Overwriting ``v$VERSION`` would leave
+        #                  the cluster on the old image, since FluxCD
+        #                  ImageUpdateAutomation only reconciles new
+        #                  semver tags entering the registry.
+        #
+        # On a cold build (probe didn't match) we don't know NEW yet,
+        # but ``v$VERSION`` existing at all means the user forgot to
+        # bump — the diverge branch fires before any expensive work.
+        # PR runs are exempt; they emit ``content-*`` and ``pr-*`` only.
+        if: github.event_name == 'push' && inputs.push == true
+        env:
+          IMAGE: ${{ inputs.registry }}/${{ github.repository_owner }}/${{ inputs.image-name }}
+          VERSION: ${{ steps.version.outputs.version }}
+          NEW_DIGEST: ${{ steps.probe.outputs.digest }}
+        run: |
+          set -euo pipefail
+          SEMVER="${IMAGE}:v${VERSION}"
+          CUR_DIGEST=$(docker buildx imagetools inspect "${SEMVER}" 2>/dev/null | awk '/^Digest:/ {print $2; exit}' || true)
+
+          if [ -z "${CUR_DIGEST}" ]; then
+            if [ -n "${NEW_DIGEST}" ]; then
+              docker buildx imagetools create --tag "${SEMVER}" "${IMAGE}@${NEW_DIGEST}"
+              echo "::notice title=Published v${VERSION}::${SEMVER}@${NEW_DIGEST}"
+            else
+              echo "v${VERSION} absent; cold build below will publish it."
+            fi
+          elif [ -n "${NEW_DIGEST}" ] && [ "${CUR_DIGEST}" = "${NEW_DIGEST}" ]; then
+            echo "::notice title=v${VERSION} already current::${SEMVER}@${CUR_DIGEST}"
+          else
+            echo "::error title=Refusing to overwrite v${VERSION}::${SEMVER} already exists at ${CUR_DIGEST}. Bump VERSION (and update CHANGELOG) and re-push — FluxCD ImageUpdateAutomation only reconciles new semver tags."
+            exit 1
+          fi
+
       - name: Set up QEMU
         if: steps.probe.outputs.skipped != 'true'
         uses: docker/setup-qemu-action@v4
