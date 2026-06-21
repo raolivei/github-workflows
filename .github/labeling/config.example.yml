@@ -1,0 +1,44 @@
+# Auto-labeling configuration template
+# Copy to your repo at .github/labeling/config.yml and customize
+
+# Project-specific patterns (customize per repo)
+project_patterns:
+  monarch-parity:
+    - monarch
+    - budget
+    - cashflow
+    - recurring
+  # Add your project labels here
+
+# Area patterns (common across repos)
+area_patterns:
+  backend:
+    - backend
+    - api
+    - service
+    - python
+  frontend:
+    - frontend
+    - ui
+    - component
+    - react
+    - next.js
+  infrastructure:
+    - k8s
+    - kubernetes
+    - docker
+    - deploy
+    - helm
+  database:
+    - database
+    - migration
+    - schema
+    - alembic
+  ci-cd:
+    - github actions
+    - workflow
+    - ci/cd
+  testing:
+    - test
+    - pytest
+    - jest
