@@ -37,16 +37,6 @@ on:
         required: false
         default: ""
         type: string
-      skip-if-already-built:
-        description: |
-          When true (default), hash the build context (via `git ls-tree`)
-          and probe the registry for an image tagged `content-<hash>`.
-          If that tag already exists, skip `docker build` entirely and
-          just surface the existing digest. Keeps a failing frontend
-          build from re-running a green api build on every retry.
-        required: false
-        default: true
-        type: boolean
       create-git-tag:
         description: |
           When true, after a successful image push to the registry, create
@@ -91,9 +81,6 @@ on:
       content-hash:
         description: "Deterministic hash of the build context"
         value: ${{ jobs.build.outputs.content-hash }}
-      skipped:
-        description: "True when the build was skipped (content-hash already in registry)"
-        value: ${{ jobs.build.outputs.skipped }}
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -108,10 +95,9 @@ jobs:
       packages: write
     outputs:
       image: ${{ steps.meta.outputs.tags }}
-      digest: ${{ steps.build.outputs.digest || steps.probe.outputs.digest }}
+      digest: ${{ steps.build.outputs.digest }}
       version: ${{ steps.version.outputs.version }}
       content-hash: ${{ steps.content_hash.outputs.hash }}
-      skipped: ${{ steps.probe.outputs.skipped }}
 
     steps:
       - name: Checkout code
@@ -214,70 +200,10 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
 
-      - name: Probe registry for existing build
-        id: probe
-        # Sets ``skipped=true`` when an image tagged with this exact
-        # content hash already exists in the registry. We use
-        # ``docker buildx imagetools inspect`` because it talks straight
-        # to the OCI API without starting a dockerd daemon.
-        run: |
-          IMAGE="${{ inputs.registry }}/${{ github.repository_owner }}/${{ inputs.image-name }}"
-          HASH="${{ steps.content_hash.outputs.hash }}"
-          TAG="content-${HASH}"
-          REF="${IMAGE}:${TAG}"
-          if [ "${{ inputs.skip-if-already-built }}" != "true" ]; then
-            echo "skipped=false" >> "$GITHUB_OUTPUT"
-            echo "skip-if-already-built disabled via input; building."
-            exit 0
-          fi
-          echo "Probing ${REF} ..."
-          if OUT=$(docker buildx imagetools inspect "${REF}" 2>/dev/null); then
-            # ``imagetools inspect`` prints a ``Digest:`` line for the
-            # manifest it resolved — that's the real OCI digest, not a
-            # local re-hash of the raw bytes.
-            DIGEST=$(printf '%s\n' "$OUT" | awk '/^Digest:/ {print $2; exit}')
-            echo "skipped=true" >> "$GITHUB_OUTPUT"
-            echo "digest=${DIGEST}" >> "$GITHUB_OUTPUT"
-            echo "::notice title=Build skipped::${REF} already exists; reusing existing image (${DIGEST})"
-          else
-            echo "skipped=false" >> "$GITHUB_OUTPUT"
-            echo "No existing image at ${REF}; proceeding with build."
-          fi
-
-      - name: Reconcile semver tag
-        # When the content-hash probe matched, the build below is skipped
-        # — including the metadata step that writes ``v$VERSION``. A
-        # release commit that only edits VERSION (or auto-bump on an
-        # otherwise-unchanged build context) leaves the build skipped,
-        # so without this step the new semver tag never appears in the
-        # registry and FluxCD never reconciles. ``imagetools create``
-        # copies the existing manifest to the new tag — no rebuild,
-        # idempotent, and a few hundred milliseconds.
-        if: steps.probe.outputs.skipped == 'true' && github.event_name == 'push' && inputs.push == true
-        env:
-          IMAGE: ${{ inputs.registry }}/${{ github.repository_owner }}/${{ inputs.image-name }}
-          VERSION: ${{ steps.version.outputs.version }}
-          NEW_DIGEST: ${{ steps.probe.outputs.digest }}
-        run: |
-          set -euo pipefail
-          SEMVER="${IMAGE}:v${VERSION}"
-          CUR_DIGEST=$(docker buildx imagetools inspect "${SEMVER}" 2>/dev/null | awk '/^Digest:/ {print $2; exit}' || true)
-          if [ -z "${CUR_DIGEST}" ]; then
-            docker buildx imagetools create --tag "${SEMVER}" "${IMAGE}@${NEW_DIGEST}"
-            echo "::notice title=Published v${VERSION}::${SEMVER}@${NEW_DIGEST}"
-          elif [ "${CUR_DIGEST}" = "${NEW_DIGEST}" ]; then
-            echo "::notice title=v${VERSION} already current::${SEMVER}@${CUR_DIGEST}"
-          else
-            echo "::error title=Refusing to overwrite v${VERSION}::${SEMVER} already exists at ${CUR_DIGEST} but this build's content is at ${NEW_DIGEST}. With auto-bump enabled this should never happen — investigate before re-running."
-            exit 1
-          fi
-
       - name: Set up QEMU
-        if: steps.probe.outputs.skipped != 'true'
         uses: docker/setup-qemu-action@v4
 
       - name: Extract metadata
-        if: steps.probe.outputs.skipped != 'true'
         id: meta
         uses: docker/metadata-action@v6
         with:
@@ -293,16 +219,20 @@ jobs:
             type=raw,value=latest,enable={{is_default_branch}}
 
       - name: Build and push
-        if: steps.probe.outputs.skipped != 'true'
         id: build
         uses: docker/build-push-action@v6
         with:
           context: ${{ inputs.context }}
           file: ${{ inputs.context }}/${{ inputs.dockerfile }}
           platforms: ${{ inputs.platforms }}
-          # Push to the registry whenever ``inputs.push`` is true, even
-          # on pull_request runs — the content-hash tag is cheap and
-          # lets the next retry skip if nothing changed.
+          # ``cache-from: type=gha`` makes warm rebuilds fast (a no-op
+          # build is ~30-60s on github-hosted runners; a couple minutes
+          # on self-hosted Pi via QEMU). The previous content-hash probe
+          # short-circuited the build to save those minutes, but it also
+          # short-circuited tag emission — so a release commit on an
+          # unchanged build context published no new semver tag and
+          # FluxCD never reconciled. Letting every push run through the
+          # build step is the simpler invariant.
           push: ${{ inputs.push }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
@@ -315,8 +245,7 @@ jobs:
           VERSION="${{ steps.version.outputs.version }}"
           IMAGE="${{ inputs.registry }}/${{ github.repository_owner }}/${{ inputs.image-name }}"
           HASH="${{ steps.content_hash.outputs.hash }}"
-          SKIPPED="${{ steps.probe.outputs.skipped }}"
-          DIGEST="${{ steps.build.outputs.digest || steps.probe.outputs.digest }}"
+          DIGEST="${{ steps.build.outputs.digest }}"
           {
             echo "## Docker Build Summary"
             echo ""
@@ -324,11 +253,6 @@ jobs:
             echo "**Version:** \`v${VERSION}\`"
             echo "**Content hash:** \`content-${HASH}\`"
             echo "**Platforms:** \`${{ inputs.platforms }}\`"
-            if [ "${SKIPPED}" = "true" ]; then
-              echo "**Status:** ♻️  reused existing image (build skipped)"
-            else
-              echo "**Status:** 🛠 built"
-            fi
             if [ -n "${DIGEST}" ]; then
               echo "**Digest:** \`${DIGEST}\`"
             fi
