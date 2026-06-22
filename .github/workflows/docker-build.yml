@@ -283,6 +283,7 @@ jobs:
           fetch-depth: 0
 
       - name: Create and push annotated tag
+        id: tag
         env:
           VERSION: ${{ needs.build.outputs.version }}
           IMAGE_NAME: ${{ inputs.image-name }}
@@ -294,8 +295,83 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           if git ls-remote --tags origin "refs/tags/${TAG}" | grep -q .; then
             echo "::notice title=Git tag exists::${TAG} already on origin — skipping (idempotent)"
+            echo "created=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           git tag -a "${TAG}" -m "${IMAGE_NAME}: ${TAG} (CI image push)"
           git push "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "refs/tags/${TAG}"
           echo "::notice title=Git tag pushed::${TAG} → ${GITHUB_SHA}"
+          echo "created=true" >> "$GITHUB_OUTPUT"
+
+      - name: Promote CHANGELOG [Unreleased] to versioned heading
+        # Only the job that actually CREATED the tag does this; the
+        # parallel api+web run will hit ``created=false`` and skip,
+        # avoiding a double-rename race.
+        #
+        # Idempotency: if ``[<VERSION>]`` already exists in the changelog,
+        # we leave it alone. If ``[Unreleased]`` is already empty (no
+        # entries between it and the next heading) we still rename it —
+        # an empty release is fine and matches the build that just
+        # published.
+        if: steps.tag.outputs.created == 'true'
+        env:
+          VERSION: ${{ needs.build.outputs.version }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if [ ! -f CHANGELOG.md ]; then
+            echo "::notice title=Changelog skip::No CHANGELOG.md in repo — skipping promotion"
+            exit 0
+          fi
+          if ! grep -q '^## \[Unreleased\]' CHANGELOG.md; then
+            echo "::notice title=Changelog skip::No ``[Unreleased]`` heading — skipping promotion"
+            exit 0
+          fi
+          if grep -q "^## \[${VERSION}\]" CHANGELOG.md; then
+            echo "::notice title=Changelog skip::``[${VERSION}]`` already in CHANGELOG.md — skipping promotion"
+            exit 0
+          fi
+
+          # Use America/Toronto so dates match the convention in
+          # existing entries; the CI runner is UTC.
+          TODAY=$(TZ='America/Toronto' date +%Y-%m-%d)
+
+          # Replace the FIRST ``## [Unreleased]`` line with an empty new
+          # ``[Unreleased]`` block followed by a versioned heading. Older
+          # ``[Unreleased]`` blocks deeper in the file (legacy artifacts)
+          # are not touched.
+          python3 - <<PY
+          from pathlib import Path
+          path = Path("CHANGELOG.md")
+          text = path.read_text()
+          marker = "## [Unreleased]"
+          idx = text.find(marker)
+          if idx < 0:
+              raise SystemExit(0)
+          replacement = f"## [Unreleased]\n\n## [${VERSION}] - ${TODAY}"
+          end = idx + len(marker)
+          path.write_text(text[:idx] + replacement + text[end:])
+          PY
+
+          if git diff --quiet CHANGELOG.md; then
+            echo "::notice title=Changelog skip::No effective change to CHANGELOG.md"
+            exit 0
+          fi
+
+          git add CHANGELOG.md
+          git commit -m "docs: promote [Unreleased] -> [v${VERSION}] (auto)"
+          # Push to the default branch using the same auth that worked
+          # for the tag push. We pull first to absorb anything that
+          # landed since the build started, retry once on conflict.
+          BRANCH="${{ github.event.repository.default_branch }}"
+          for attempt in 1 2 3; do
+            git pull --rebase "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "$BRANCH" || true
+            if git push "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "HEAD:${BRANCH}"; then
+              echo "::notice title=Changelog promoted::[Unreleased] -> [v${VERSION}] - ${TODAY}"
+              exit 0
+            fi
+            echo "Push failed (attempt ${attempt}); retrying..."
+            sleep 5
+          done
+          echo "::warning title=Changelog promotion failed::could not push after retries"
+          exit 1
