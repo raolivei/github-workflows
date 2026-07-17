@@ -217,6 +217,7 @@ jobs:
             type=sha,prefix=sha-
             type=raw,value=content-${{ steps.content_hash.outputs.hash }}
             type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value=build-{{date 'YYYYMMDDHHmmss'}}-{{sha}},enable={{is_default_branch}}
 
       - name: Build and push
         id: build
