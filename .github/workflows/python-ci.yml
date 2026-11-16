@@ -23,6 +23,11 @@ on:
         required: false
         default: true
         type: boolean
+      run-ruff-format:
+        description: "Run ruff format --check"
+        required: false
+        default: false
+        type: boolean
       run-mypy:
         description: "Run mypy type checker"
         required: false
@@ -125,6 +130,15 @@ jobs:
             ruff check .
           fi
 
+      - name: Run Ruff format check
+        if: inputs.run-ruff-format
+        run: |
+          if [ "${{ inputs.package-manager }}" = "poetry" ]; then
+            poetry run ruff format --check .
+          else
+            ruff format --check .
+          fi
+
       - name: Run Mypy
         if: inputs.run-mypy
         run: |
@@ -155,6 +169,7 @@ jobs:
             echo "| Check | Status |"
             echo "|-------|--------|"
             echo "| Ruff | ${{ inputs.run-ruff && '✅ Passed' || '⏭️ Skipped' }} |"
+            echo "| Ruff format | ${{ inputs.run-ruff-format && '✅ Passed' || '⏭️ Skipped' }} |"
             echo "| Mypy | ${{ inputs.run-mypy && '✅ Passed' || '⏭️ Skipped' }} |"
             echo "| Pytest | ${{ inputs.run-pytest && '✅ Passed' || '⏭️ Skipped' }} |"
           } >> "$GITHUB_STEP_SUMMARY"
