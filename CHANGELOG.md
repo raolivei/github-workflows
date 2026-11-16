@@ -9,6 +9,8 @@
 
 ### Added
 
+- **`node-ci.yml`** — reusable npm CI (install, lint with zero warnings, `tsc --noEmit`, tests); every step opt-out with overridable commands. First caller: canopy.
+- **`python-ci.yml`** — optional `run-ruff-format` input runs `ruff format --check`.
 - **`python-ci.yml`** — restored reusable Poetry/pip CI (ruff, mypy, pytest); required by `ollie` and other callers that still reference it.
 - **`docker-build.yml`** — optional `job-timeout-minutes` input (default 90) for QEMU/arm64 builds; caller jobs cannot set `timeout-minutes` when using `workflow_call`.
 - **`validate.yml`** — runs `actionlint` on push/PR to `main` (reusable workflows only run in caller repos).

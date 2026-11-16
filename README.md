@@ -7,7 +7,8 @@ Centralized reusable GitHub Actions workflows for personal projects.
 | Workflow | Description |
 |----------|-------------|
 | `docker-build.yml` | Build and push arm64 Docker images to GHCR |
-| `python-ci.yml` | Ruff, mypy, pytest (Poetry or pip) |
+| `python-ci.yml` | Ruff (check + optional format check), mypy, pytest (Poetry or pip) |
+| `node-ci.yml` | npm ci, lint, type check, tests for npm projects |
 | `static-site-pages.yml` | Build and deploy static sites to GitHub Pages (VitePress, etc.) |
 | `version-check.yml` | Enforce VERSION file bump on pull requests |
 
@@ -70,6 +71,29 @@ Build and push a single Docker image to GHCR.
 
 **Secrets:** `REGISTRY_TOKEN` (required)
 
+### python-ci.yml
+
+Ruff, optional `ruff format --check`, mypy and pytest with Poetry or pip. The pip path installs `requirements-dev.txt` when present (otherwise `requirements.txt` plus ruff/mypy/pytest).
+
+**Inputs:** `python-version` (default `3.11`), `working-directory`, `package-manager` (`poetry` | `pip`), `run-ruff`, `run-ruff-format` (default `false`), `run-mypy`, `mypy-paths`, `run-pytest`, `pytest-args`, `poetry-groups`, `runs-on`
+
+### node-ci.yml
+
+`npm ci`, then lint, type check and tests. Each step can be switched off and its command overridden.
+
+**Inputs:** `node-version` (default `24`), `working-directory`, `install-args` (e.g. `--legacy-peer-deps`), `run-lint` / `lint-command` (default `npm run lint -- --max-warnings=0`), `run-typecheck` / `typecheck-command` (default `npx tsc --noEmit`), `run-test` / `test-command` (default `npm test -- --ci`), `runs-on`
+
+**Example (Next.js app in `frontend/`):**
+
+```yaml
+uses: raolivei/github-workflows/.github/workflows/node-ci.yml@main
+with:
+  node-version: "20"
+  working-directory: frontend
+  install-args: --legacy-peer-deps
+  runs-on: ubuntu-latest
+```
+
 ### static-site-pages.yml
 
 Build and deploy static sites to GitHub Pages.
@@ -98,6 +122,7 @@ Fails the PR if `VERSION` was not bumped. Used by ollie and similar repos.
 | pi-fleet-blog | static-site-pages |
 | eldertree-docs | static-site-pages, docker-build |
 | ollie | docker-build (matrix caller) |
+| canopy | docker-build, version-check, python-ci, node-ci |
 | canopy, swimTO, elder, journey, … | docker-build |
 | ollie (PR) | version-check |
 

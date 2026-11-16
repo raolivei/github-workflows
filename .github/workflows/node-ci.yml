@@ -1,0 +1,111 @@
+name: Node CI
+
+# Reusable lint / type-check / test pipeline for npm projects (Next.js, Vite,
+# plain TypeScript). Steps are opt-out so callers without a type-check or test
+# script can still use it.
+
+on:
+  workflow_call:
+    inputs:
+      node-version:
+        description: "Node version to use"
+        required: false
+        default: "24"
+        type: string
+      working-directory:
+        description: "Directory containing package.json"
+        required: false
+        default: "."
+        type: string
+      install-args:
+        description: "Extra arguments for npm ci (e.g. --legacy-peer-deps)"
+        required: false
+        default: ""
+        type: string
+      run-lint:
+        description: "Run the lint command"
+        required: false
+        default: true
+        type: boolean
+      lint-command:
+        description: "Lint command"
+        required: false
+        default: "npm run lint -- --max-warnings=0"
+        type: string
+      run-typecheck:
+        description: "Run the type-check command"
+        required: false
+        default: true
+        type: boolean
+      typecheck-command:
+        description: "Type-check command"
+        required: false
+        default: "npx tsc --noEmit"
+        type: string
+      run-test:
+        description: "Run the test command"
+        required: false
+        default: true
+        type: boolean
+      test-command:
+        description: "Test command"
+        required: false
+        default: "npm test -- --ci"
+        type: string
+      runs-on:
+        description: "Runner labels (string or JSON array). Default self-hosted (Eldertree ARC)."
+        required: false
+        default: "self-hosted"
+        type: string
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  CI: "true"
+
+jobs:
+  ci:
+    runs-on: ${{ startsWith(inputs['runs-on'], '[') && fromJSON(inputs['runs-on']) || inputs['runs-on'] }}
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Set up Node ${{ inputs.node-version }}
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ inputs.node-version }}
+          cache: npm
+          cache-dependency-path: ${{ inputs.working-directory }}/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci ${{ inputs.install-args }}
+
+      - name: Lint
+        if: inputs.run-lint
+        run: ${{ inputs.lint-command }}
+
+      - name: Type check
+        if: inputs.run-typecheck
+        run: ${{ inputs.typecheck-command }}
+
+      - name: Test
+        if: inputs.run-test
+        run: ${{ inputs.test-command }}
+
+      - name: Summary
+        run: |
+          {
+            echo "## Node CI Summary"
+            echo ""
+            echo "**Node:** ${{ inputs.node-version }}"
+            echo "**Working Directory:** ${{ inputs.working-directory }}"
+            echo ""
+            echo "| Check | Status |"
+            echo "|-------|--------|"
+            echo "| Lint | ${{ inputs.run-lint && '✅ Passed' || '⏭️ Skipped' }} |"
+            echo "| Type check | ${{ inputs.run-typecheck && '✅ Passed' || '⏭️ Skipped' }} |"
+            echo "| Test | ${{ inputs.run-test && '✅ Passed' || '⏭️ Skipped' }} |"
+          } >> "$GITHUB_STEP_SUMMARY"
